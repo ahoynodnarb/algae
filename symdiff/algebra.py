@@ -3,40 +3,45 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Any, Callable, List, Optional
+    from typing import Any, Callable, List, Optional, Set
 
 import symdiff as sd
 from symdiff.utils import remove_redudant_parens
 
 
 class ExpressionNode:
+    variables: Set[Variable]
+
     def __init__(
         self,
         *args: Expression,
-        eval_func: Optional[SymFunc] = None,
+        source: Optional[SymFunc] = None,
         repr_func: Optional[Callable] = None,
         expression_name: str = "",
     ):
-        if eval_func is None:
-            diff_funcs = {}
-
         self.args = args
-        self.eval_func = eval_func
-        self.diff_funcs = diff_funcs
+        self.source = source
+        self.diff_funcs = None if source is None else source.diff_funcs
         self.repr_func = repr_func
         self.name = expression_name
 
+        self.variables = set.union(*[arg.variables for arg in self.args])
+
     def diff(self, wrt: Variable) -> Expression:
-        diff_func = self.diff_funcs.get(wrt)
-        if diff_func is None:
+        if self.diff_funcs is None or wrt not in self.variables:
             return Constant(0)
-        return diff_func(*self.args)
+        return sum(
+            [
+                diff_func(*self.args) * arg.diff(wrt)
+                for diff_func, arg in zip(self.diff_funcs, self.args)
+            ]
+        )
 
     def eval(self) -> Any:
-        if self.eval_func is None:
+        if self.source is None:
             raise ValueError("Expression has no evaluation function")
 
-        return self.eval_func(*[arg.eval() for arg in self.args])
+        return self.source.eval(*[arg.eval() for arg in self.args])
 
     def __repr__(self) -> str:
         if self.repr_func is None:
@@ -46,19 +51,22 @@ class ExpressionNode:
 
 
 class AlgebraObj:
+    def eval(self) -> Any:
+        raise NotImplementedError
+
     def __repr__(self) -> str:
         raise NotImplementedError()
 
 
 class Expression(AlgebraObj):
-    def __init__(
-        self,
-        *args: Expression,
-        eval_func: Callable = None,
-        repr_func: Callable = None,
-        expression_name: str = "",
-    ):
-        self.node = ExpressionNode(*args, eval_func, repr_func, expression_name)
+    variables: Set[Variable]
+
+    def __init__(self, node: ExpressionNode):
+        self.node = node
+        self.variables = node.variables
+
+    def __neg__(self) -> Expression:
+        return Constant(-1) * self
 
     def __add__(self, other: Expression) -> Expression:
         return sd.add(self, other)
@@ -84,22 +92,32 @@ class Expression(AlgebraObj):
     def __rtruediv__(self, other: Expression) -> Expression:
         return sd.divide(other, self)
 
+    def __pow__(self, other: Expression) -> Expression:
+        return sd.pow(self, other)
+
+    def __rpow__(self, other: Expression) -> Expression:
+        return sd.pow(other, self)
+
     def eval(self) -> Any:
         return self.node.eval()
 
-    def __repr__(self) -> str:
-        return self.node.__repr__()
-
     def diff(self, wrt: Variable) -> Expression:
         return self.node.diff(wrt)
+
+    def __repr__(self) -> str:
+        return self.node.__repr__()
 
 
 class Constant(Expression):
     def __init__(self, val: Any):
         self.val = val
+        self.variables = set()
 
     def eval(self) -> Any:
         return self.val
+
+    def diff(self, wrt: Variable) -> Expression:
+        return Constant(0)
 
     def __repr__(self) -> str:
         return self.val.__repr__()
@@ -109,6 +127,7 @@ class Variable(Expression):
     def __init__(self, name: str):
         self.name = name
         self.val = None
+        self.variables = set([self])
 
     def eval(self, val: Optional[Any] = None) -> Any:
         if val is not None:
@@ -120,6 +139,9 @@ class Variable(Expression):
             )
 
         return self.val
+
+    def diff(self, wrt: Variable) -> Expression:
+        return Constant(1) if wrt == self else Constant(0)
 
     def __eq__(self, value: Any) -> bool:
         if not isinstance(value, Variable):
@@ -138,14 +160,26 @@ class SymFunc(AlgebraObj):
     diff_funcs: List[Callable]
 
     def __init__(
-        self, eval_func: Callable, diff_funcs: Optional[List[Callable]] = None
+        self,
+        eval_func: Callable,
+        diff_funcs: List[Callable],
+        repr_func: Callable,
+        func_name: str,
     ):
-        if diff_funcs is None:
-            diff_funcs = []
-
         self.eval_func = eval_func
         self.diff_funcs = diff_funcs
+        self.repr_func = repr_func
+        self.func_name = func_name
 
-    def __call__(self, *args):
+    def __call__(self, *args: Any) -> Expression:
         args = [x if isinstance(x, AlgebraObj) else Constant(x) for x in args]
+        node = ExpressionNode(
+            *args,
+            source=self,
+            repr_func=self.repr_func,
+            expression_name=self.func_name,
+        )
+        return Expression(node)
+
+    def eval(self, *args: Any) -> Any:
         return self.eval_func(*args)

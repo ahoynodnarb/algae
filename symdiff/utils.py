@@ -1,8 +1,10 @@
 def remove_redudant_parens(s: str) -> str:
     if len(s) <= 2:
-        return ""
+        return s
     start = s.find("(")
     end = s.rfind(")")
+    if start == -1 or end == -1:
+        return s
     l = start
     r = end
     while l <= r:
@@ -12,7 +14,7 @@ def remove_redudant_parens(s: str) -> str:
             break
         l += 1
         r -= 1
-    beginning = s[:start]
+    beginning = s[: start + 1]
     mid = s[l : r + 1]
-    ending = s[end + 1 :]
-    return f"{beginning}({mid}){ending}"
+    ending = s[end:]
+    return f"{beginning}{mid}{ending}"
