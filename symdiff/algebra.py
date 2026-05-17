@@ -25,11 +25,12 @@ class ExpressionNode:
         self.repr_func = repr_func
         self.name = expression_name
 
-        self.variables = set.union(*[arg.variables for arg in self.args])
+        self.variables = set.union(*[arg.node.variables for arg in self.args])
 
     def diff(self, wrt: Variable) -> Expression:
         if self.diff_funcs is None or wrt not in self.variables:
             return Constant(0)
+
         return sum(
             [
                 diff_func(*self.args) * arg.diff(wrt)
@@ -37,17 +38,56 @@ class ExpressionNode:
             ]
         )
 
-    def eval(self) -> Any:
+    def eval(self, *vars: FrozenVariable) -> Any:
         if self.source is None:
             raise ValueError("Expression has no evaluation function")
 
-        return self.source.eval(*[arg.eval() for arg in self.args])
+        if any([var not in vars for var in self.variables]):
+            raise ValueError(
+                f"Variable {self.name} uninitialized while attempting to evaluate expression"
+            )
+
+        return self.source.eval(*[arg.eval(*vars) for arg in self.args])
 
     def __repr__(self) -> str:
         if self.repr_func is None:
             return super().__repr__()
 
         return remove_redudant_parens(self.repr_func(*self.args))
+
+
+class ConstantNode(ExpressionNode):
+    def __init__(self, val: Any):
+        self.val = val
+        self.variables = set()
+
+    def diff(self, wrt: Variable) -> Expression:
+        return Constant(0)
+
+    def eval(self, *vars: FrozenVariable) -> Any:
+        return self.val
+
+    def __repr__(self) -> str:
+        return self.val.__repr__()
+
+
+class VariableNode(ExpressionNode):
+    def __init__(self, var: Variable):
+        self.name = var.name
+        self.var = var
+        self.variables = set([var])
+
+    def diff(self, wrt: Variable) -> Expression:
+        return Constant(1) if wrt == self.var else Constant(0)
+
+    def eval(self, *vars: FrozenVariable) -> Any:
+        frozen = vars[vars.index(self.var)]
+        return frozen.val
+
+
+class FrozenVariableNode(VariableNode):
+    def eval(self, *vars: FrozenVariable) -> Any:
+        return self.var.val
 
 
 class AlgebraObj:
@@ -59,14 +99,13 @@ class AlgebraObj:
 
 
 class Expression(AlgebraObj):
-    variables: Set[Variable]
+    node: ExpressionNode
 
     def __init__(self, node: ExpressionNode):
         self.node = node
-        self.variables = node.variables
 
     def __neg__(self) -> Expression:
-        return Constant(-1) * self
+        return -1 * self
 
     def __add__(self, other: Expression) -> Expression:
         return sd.add(self, other)
@@ -98,8 +137,8 @@ class Expression(AlgebraObj):
     def __rpow__(self, other: Expression) -> Expression:
         return sd.pow(other, self)
 
-    def eval(self) -> Any:
-        return self.node.eval()
+    def eval(self, *vars: FrozenVariable) -> Any:
+        return self.node.eval(*vars)
 
     def diff(self, wrt: Variable) -> Expression:
         return self.node.diff(wrt)
@@ -110,49 +149,34 @@ class Expression(AlgebraObj):
 
 class Constant(Expression):
     def __init__(self, val: Any):
-        self.val = val
-        self.variables = set()
-
-    def eval(self) -> Any:
-        return self.val
-
-    def diff(self, wrt: Variable) -> Expression:
-        return Constant(0)
-
-    def __repr__(self) -> str:
-        return self.val.__repr__()
+        self.node = ConstantNode(val)
 
 
 class Variable(Expression):
     def __init__(self, name: str):
         self.name = name
-        self.val = None
-        self.variables = set([self])
+        self.node = VariableNode(self)
 
-    def eval(self, val: Optional[Any] = None) -> Any:
-        if val is not None:
-            self.val = val
+    def set(self, val: Any) -> Any:
+        return FrozenVariable(self, val)
 
-        if self.val is None:
-            raise ValueError(
-                f"Variable {self.name} uninitialized while attempting to evaluate expression"
-            )
-
-        return self.val
-
-    def diff(self, wrt: Variable) -> Expression:
-        return Constant(1) if wrt == self else Constant(0)
+    def __hash__(self) -> int:
+        return self.name.__hash__()
 
     def __eq__(self, value: Any) -> bool:
         if not isinstance(value, Variable):
             return False
         return self.name == value.name
 
-    def __hash__(self):
-        return self.name.__hash__()
-
     def __repr__(self) -> str:
         return self.name
+
+
+class FrozenVariable(Variable):
+    def __init__(self, var: Variable, val: Any):
+        self.name = var.name
+        self.val = val
+        self.node = FrozenVariableNode(self)
 
 
 class SymFunc(AlgebraObj):
