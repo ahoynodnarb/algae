@@ -21,10 +21,10 @@ class ExpressionNode:
     ):
         self.args = args
         self.source = source
-        self.diff_funcs = None if source is None else source.diff_funcs
         self.repr_func = repr_func
         self.name = expression_name
 
+        self.diff_funcs = None if source is None else source.diff_funcs
         self.variables = set.union(*[arg.node.variables for arg in self.args])
 
     def diff(self, wrt: Variable) -> Expression:
@@ -107,34 +107,34 @@ class Expression(AlgebraObj):
     def __neg__(self) -> Expression:
         return -1 * self
 
-    def __add__(self, other: Expression) -> Expression:
+    def __add__(self, other: Expression | Any) -> Expression:
         return sd.add(self, other)
 
-    def __radd__(self, other: Expression) -> Expression:
+    def __radd__(self, other: Expression | Any) -> Expression:
         return sd.add(other, self)
 
-    def __sub__(self, other: Expression) -> Expression:
+    def __sub__(self, other: Expression | Any) -> Expression:
         return sd.subtract(self, other)
 
-    def __rsub__(self, other: Expression) -> Expression:
+    def __rsub__(self, other: Expression | Any) -> Expression:
         return sd.subtract(other, self)
 
-    def __mul__(self, other: Expression) -> Expression:
+    def __mul__(self, other: Expression | Any) -> Expression:
         return sd.multiply(self, other)
 
-    def __rmul__(self, other: Expression) -> Expression:
+    def __rmul__(self, other: Expression | Any) -> Expression:
         return sd.multiply(other, self)
 
-    def __truediv__(self, other: Expression) -> Expression:
+    def __truediv__(self, other: Expression | Any) -> Expression:
         return sd.divide(self, other)
 
-    def __rtruediv__(self, other: Expression) -> Expression:
+    def __rtruediv__(self, other: Expression | Any) -> Expression:
         return sd.divide(other, self)
 
-    def __pow__(self, other: Expression) -> Expression:
+    def __pow__(self, other: Expression | Any) -> Expression:
         return sd.pow(self, other)
 
-    def __rpow__(self, other: Expression) -> Expression:
+    def __rpow__(self, other: Expression | Any) -> Expression:
         return sd.pow(other, self)
 
     def eval(self, *vars: FrozenVariable) -> Any:
