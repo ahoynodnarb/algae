@@ -257,13 +257,17 @@ class SymFunc(AlgebraObj):
         import algae.engine as engine
 
         args = [x if isinstance(x, AlgebraObj) else Constant(x) for x in args]
-        node = ExpressionNode(
-            *args,
-            source=self,
-            repr_func=self.repr_func,
-            expression_name=self.func_name,
+        expr = Expression(
+            ExpressionNode(
+                *args,
+                source=self,
+                repr_func=self.repr_func,
+                expression_name=self.func_name,
+            )
         )
-        return engine.simplify(Expression(node))
+        if engine.engine_enabled():
+            expr = engine.simplify(expr)
+        return expr
 
     def eval(self, *args: Any) -> Any:
         return self.eval_func(*args)

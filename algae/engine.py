@@ -12,15 +12,20 @@ if TYPE_CHECKING:
     import algae.types as sdt
 
 
-_context_map = ContextVar("context_map", default={})
+_engine_enabled = ContextVar("engine_enabled", default=True)
 
 
-class rule_context:
+def engine_enabled() -> bool:
+    return _engine_enabled.get()
+
+
+class no_engine:
     def __enter__(self):
-        _context_map.set({})
+        self.prev = _engine_enabled.get()
+        _engine_enabled.set(False)
 
-    def __exit__(self):
-        _context_map.set({})
+    def __exit__(self, type, value, traceback):
+        _engine_enabled.set(self.prev)
 
 
 class Tag:
@@ -311,6 +316,20 @@ identity_rules = (
         lambda ctx: sd.Constant(0),
     ),
     (
+        MulTag(
+            ConstantTag(1),
+            GenericTag(Tag, "e"),
+        ),
+        lambda ctx: ctx["e"][1],
+    ),
+    (
+        MulTag(
+            GenericTag(Tag, "e"),
+            ConstantTag(1),
+        ),
+        lambda ctx: ctx["e"][1],
+    ),
+    (
         AddTag(
             ConstantTag(0),
             GenericTag(Tag, "e"),
@@ -418,7 +437,8 @@ def pre_order_apply(expr: sd.Expression, ruleset: tuple[sdt.Rule]) -> sd.Express
 
 
 def simplify(expr: sd.Expression) -> sd.Expression:
-    expr = pre_order_apply(expr, EARLY_DISPATCH_RULES)
-    expr = post_order_apply(expr, REGULAR_DISPATCH_RULES)
-    expr = post_order_apply(expr, FINAL_DISPATCH_RULES)
+    with no_engine():
+        expr = pre_order_apply(expr, EARLY_DISPATCH_RULES)
+        expr = post_order_apply(expr, REGULAR_DISPATCH_RULES)
+        expr = post_order_apply(expr, FINAL_DISPATCH_RULES)
     return expr
