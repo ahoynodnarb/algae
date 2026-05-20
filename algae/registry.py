@@ -3,17 +3,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Callable, Optional
+    from typing import Any, Callable, Optional
 
-    import symdiff.types as sdt
+    import algae.types as sdt
 
-import symdiff as sd
+import algae as sd
 
 
 def register_unary_func(
-    eval_func: sdt.UnaryFunction,
-    diff_x: Callable[[sd.Expression], sd.Expression],
-    repr_func: Optional[sdt.UnaryFunction] = None,
+    eval_func: Callable[[Any], Any],
+    diff_x: sdt.UnaryFunction,
+    repr_func: Optional[Callable[[sd.Expression], str]] = None,
     func_name: Optional[str] = None,
 ) -> sdt.UnaryFunction:
     if func_name is None:
@@ -22,20 +22,22 @@ def register_unary_func(
     if repr_func is None:
         repr_func = lambda x: f"{func_name}({x})"
 
-    return sd.SymFunc(
+    return sd.UnarySymFunc(
         eval_func=eval_func,
-        diff_funcs=[diff_x],
+        diff_x=diff_x,
         repr_func=repr_func,
         func_name=func_name,
     )
 
 
 def register_binary_func(
-    eval_func: sdt.BinaryFunction,
-    diff_x: Callable[[sd.Expression, sd.Expression], sd.Expression],
-    diff_y: Callable[[sd.Expression, sd.Expression], sd.Expression],
+    eval_func: Callable[[Any, Any], Any],
+    diff_x: sdt.BinaryFunction,
+    diff_y: sdt.BinaryFunction,
     repr_func: Optional[sdt.BinaryFunction] = None,
     func_name: Optional[str] = None,
+    associates: bool = False,
+    commutes: bool = False,
 ) -> sdt.BinaryFunction:
     if func_name is None:
         func_name = "sd_anonymous_binary"
@@ -43,9 +45,12 @@ def register_binary_func(
     if repr_func is None:
         repr_func = lambda x, y: f"{func_name}({x}, {y})"
 
-    return sd.SymFunc(
+    return sd.BinarySymFunc(
         eval_func=eval_func,
-        diff_funcs=[diff_x, diff_y],
+        diff_x=diff_x,
+        diff_y=diff_y,
         repr_func=repr_func,
         func_name=func_name,
+        associates=associates,
+        commutes=commutes,
     )

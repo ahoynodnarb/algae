@@ -5,11 +5,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any, Callable, List, Optional, Set
 
-import symdiff as sd
-from symdiff.utils import remove_redudant_parens
+    import algae.types as sdt
+
+import algae as sd
+from algae.utils import remove_redudant_parens
 
 
 class ExpressionNode:
+    args: List[Expression]
+    source: Optional[SymFunc]
+    repr_func: Optional[Callable]
+    name: str
     variables: Set[Variable]
 
     def __init__(
@@ -25,7 +31,9 @@ class ExpressionNode:
         self.name = expression_name
 
         self.diff_funcs = None if source is None else source.diff_funcs
-        self.variables = set.union(*[arg.node.variables for arg in self.args])
+        self.variables = (
+            set() if not args else set.union(*[arg.node.variables for arg in self.args])
+        )
 
     def diff(self, wrt: Variable) -> Expression:
         if self.diff_funcs is None or wrt not in self.variables:
@@ -49,6 +57,9 @@ class ExpressionNode:
 
         return self.source.eval(*[arg.eval(*vars) for arg in self.args])
 
+    def is_constant(self) -> bool:
+        return len(self.variables) == 0
+
     def __repr__(self) -> str:
         if self.repr_func is None:
             return super().__repr__()
@@ -57,9 +68,9 @@ class ExpressionNode:
 
 
 class ConstantNode(ExpressionNode):
-    def __init__(self, val: Any):
-        self.val = val
-        self.variables = set()
+    def __init__(self, const: Constant):
+        super().__init__(expression_name=str(const.val))
+        self.val = const.val
 
     def diff(self, wrt: Variable) -> Expression:
         return Constant(0)
@@ -68,14 +79,14 @@ class ConstantNode(ExpressionNode):
         return self.val
 
     def __repr__(self) -> str:
-        return self.val.__repr__()
+        return str(self.val)
 
 
 class VariableNode(ExpressionNode):
     def __init__(self, var: Variable):
-        self.name = var.name
+        super().__init__(expression_name=var.name)
         self.var = var
-        self.variables = set([var])
+        self.variables = set([self.var])
 
     def diff(self, wrt: Variable) -> Expression:
         return Constant(1) if wrt == self.var else Constant(0)
@@ -86,8 +97,12 @@ class VariableNode(ExpressionNode):
 
 
 class FrozenVariableNode(VariableNode):
+    def __init__(self, var: FrozenVariable):
+        super().__init__(var)
+        self.val = var.val
+
     def eval(self, *vars: FrozenVariable) -> Any:
-        return self.var.val
+        return self.val
 
 
 class AlgebraObj:
@@ -143,13 +158,53 @@ class Expression(AlgebraObj):
     def diff(self, wrt: Variable) -> Expression:
         return self.node.diff(wrt)
 
+    def is_constant(self) -> bool:
+        return self.node.is_constant()
+
     def __repr__(self) -> str:
         return self.node.__repr__()
 
 
 class Constant(Expression):
     def __init__(self, val: Any):
-        self.node = ConstantNode(val)
+        self.val = val
+        self.node = ConstantNode(self)
+
+    def __neg__(self) -> Constant:
+        return Constant(-self.val)
+
+    def __hash__(self) -> int:
+        return self.val.__hash__()
+
+    def __eq__(self, other: Constant | FrozenVariable | Any) -> bool:
+        if isinstance(other, (Constant, FrozenVariable)):
+            return self.val == other.val
+
+        return self.val == other
+
+    def __lt__(self, other: Constant | FrozenVariable | Any) -> bool:
+        if isinstance(other, (Constant, FrozenVariable)):
+            return self.val < other.val
+
+        return self.val < other
+
+    def __le__(self, other: Constant | FrozenVariable | Any) -> bool:
+        if isinstance(other, (Constant, FrozenVariable)):
+            return self.val <= other.val
+
+        return self.val <= other
+
+    def __gt__(self, other: Constant | FrozenVariable | Any) -> bool:
+        if isinstance(other, (Constant, FrozenVariable)):
+            return self.val > other.val
+
+        return self.val > other
+
+    def __ge__(self, other: Constant | FrozenVariable | Any) -> bool:
+        if isinstance(other, (Constant, FrozenVariable)):
+            return self.val >= other.val
+
+        return self.val >= other
 
 
 class Variable(Expression):
@@ -159,6 +214,9 @@ class Variable(Expression):
 
     def set(self, val: Any) -> Any:
         return FrozenVariable(self, val)
+
+    def copy(self) -> Variable:
+        return Variable(self.name)
 
     def __hash__(self) -> int:
         return self.name.__hash__()
@@ -172,7 +230,7 @@ class Variable(Expression):
         return self.name
 
 
-class FrozenVariable(Variable):
+class FrozenVariable(Variable, Constant):
     def __init__(self, var: Variable, val: Any):
         self.name = var.name
         self.val = val
@@ -196,6 +254,8 @@ class SymFunc(AlgebraObj):
         self.func_name = func_name
 
     def __call__(self, *args: Any) -> Expression:
+        import algae.engine as engine
+
         args = [x if isinstance(x, AlgebraObj) else Constant(x) for x in args]
         node = ExpressionNode(
             *args,
@@ -203,7 +263,62 @@ class SymFunc(AlgebraObj):
             repr_func=self.repr_func,
             expression_name=self.func_name,
         )
-        return Expression(node)
+        return engine.simplify(Expression(node))
 
     def eval(self, *args: Any) -> Any:
         return self.eval_func(*args)
+
+    def __repr__(self) -> str:
+        return self.func_name
+
+
+class UnarySymFunc(SymFunc):
+    def __init__(
+        self,
+        eval_func: Callable[[Any], Any],
+        diff_x: sdt.UnaryFunction,
+        repr_func: Callable[[Expression], str],
+        func_name: str,
+    ):
+        return super().__init__(
+            eval_func=eval_func,
+            diff_funcs=[diff_x],
+            repr_func=repr_func,
+            func_name=func_name,
+        )
+
+    def __call__(self, arg: Any) -> Expression:
+        return super().__call__(arg)
+
+    def eval(self, arg: Any) -> Any:
+        return super().eval(arg)
+
+
+class BinarySymFunc(SymFunc):
+    associates: bool
+    commutes: bool
+
+    def __init__(
+        self,
+        eval_func: Callable[[Any, Any], Any],
+        diff_x: sdt.BinaryFunction,
+        diff_y: sdt.BinaryFunction,
+        repr_func: Callable[[Expression, Expression], str],
+        func_name: str,
+        associates: bool = False,
+        commutes: bool = False,
+    ):
+        super().__init__(
+            eval_func=eval_func,
+            diff_funcs=[diff_x, diff_y],
+            repr_func=repr_func,
+            func_name=func_name,
+        )
+        self.associates = associates
+        self.commutes = commutes
+
+    def __call__(self, arg1: Any, arg2: Any) -> Expression:
+        return super().__call__(arg1, arg2)
+
+    def eval(self, arg1: Any, arg2: Any) -> Any:
+        return super().eval(arg1, arg2)
