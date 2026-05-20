@@ -3,13 +3,13 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
-import algae.algebra as sd
+import algae.algebra as alg
 import algae.functions as F
 
 if TYPE_CHECKING:
     from typing import Any, List
 
-    import algae.types as sdt
+    import algae.types as algt
 
 
 _engine_enabled = ContextVar("engine_enabled", default=True)
@@ -64,20 +64,20 @@ class GenericTag(Tag):
 
 
 class ConstantTag(Tag):
-    identifier: sd.Constant
+    identifier: alg.Constant
 
 
 class VariableTag(GenericTag):
-    identifier: sd.Variable
+    identifier: alg.Variable
 
     def __init__(self, identifier):
         super().__init__(type(self), identifier)
 
 
 class FuncTag(Tag):
-    identifier: sd.SymFunc
+    identifier: alg.SymFunc
 
-    def __init__(self, identifier: sd.SymFunc):
+    def __init__(self, identifier: alg.SymFunc):
         super().__init__(identifier)
 
     def __call__(self, *args: List[Tag]) -> Tag:
@@ -97,14 +97,14 @@ class GenericFuncTag(GenericTag, FuncTag):
 
 
 class UnaryFuncTag(FuncTag):
-    identifier: sd.UnarySymFunc
+    identifier: alg.UnarySymFunc
 
     def __call__(self, arg: Tag):
         return super().__call__(arg)
 
 
 class BinaryFuncTag(FuncTag):
-    identifier: sd.BinarySymFunc
+    identifier: alg.BinarySymFunc
 
     def __call__(self, arg1: Tag, arg2: Tag):
         return super().__call__(arg1, arg2)
@@ -158,21 +158,21 @@ MulTag = BinaryFuncTag(F.multiply)
 DivTag = BinaryFuncTag(F.divide)
 
 
-def fold_constants(ctx: sdt.RuleContext) -> sd.Constant:
+def fold_constants(ctx: algt.RuleContext) -> alg.Constant:
     _, f = ctx["f"]
     _, a = ctx["a"]
     _, b = ctx["b"]
-    return sd.Constant(f(a, b).eval())
+    return alg.Constant(f(a, b).eval())
 
 
-def group_commutative(ctx: sdt.RuleContext) -> sd.Expression:
+def group_commutative(ctx: algt.RuleContext) -> alg.Expression:
     _, f = ctx["f"]
     _, e = ctx["e"]
     _, a = ctx["a"]
     return f(e, a)
 
 
-def group_associative(ctx: sdt.RuleContext) -> sd.Expression:
+def group_associative(ctx: algt.RuleContext) -> alg.Expression:
     _, f = ctx["f"]
     _, a = ctx["a"]
     _, b = ctx["b"]
@@ -180,24 +180,24 @@ def group_associative(ctx: sdt.RuleContext) -> sd.Expression:
     return f(b, f(a, c))
 
 
-def transpose_add(ctx: sdt.RuleContext) -> sd.Expression:
+def transpose_add(ctx: algt.RuleContext) -> alg.Expression:
     _, a = ctx["a"]
     _, e = ctx["e"]
     return e + a
 
 
-def transpose_mul(ctx: sdt.RuleContext) -> sd.Expression:
+def transpose_mul(ctx: algt.RuleContext) -> alg.Expression:
     _, a = ctx["a"]
     _, e = ctx["e"]
     return a * e
 
 
-def combine_add(ctx: sdt.RuleContext) -> sd.Expression:
+def combine_add(ctx: algt.RuleContext) -> alg.Expression:
     _, x = ctx["x"]
     return 2 * x
 
 
-def combine_mul(ctx: sdt.RuleContext) -> sd.Expression:
+def combine_mul(ctx: algt.RuleContext) -> alg.Expression:
     _, a = ctx["a"]
     _, x = ctx["x"]
     return (a + 1) * x
@@ -306,14 +306,14 @@ identity_rules = (
             ConstantTag(0),
             GenericTag(Tag, "e"),
         ),
-        lambda ctx: sd.Constant(0),
+        lambda ctx: alg.Constant(0),
     ),
     (
         MulTag(
             GenericTag(Tag, "e"),
             ConstantTag(0),
         ),
-        lambda ctx: sd.Constant(0),
+        lambda ctx: alg.Constant(0),
     ),
     (
         MulTag(
@@ -364,28 +364,41 @@ FINAL_DISPATCH_RULES = (
         ),
         lambda ctx: ctx["e"][1] - (-ctx["a"][1]),
     ),
+    (
+        AddTag(
+            GenericTag(Tag, "a"),
+            MulTag(
+                NegativeConstantTag("b"),
+                GenericTag(Tag, "c"),
+            ),
+        ),
+        lambda ctx: ctx["a"][1] - (-ctx["b"][1] * ctx["c"][1]),
+    ),
+    *identity_rules,
 )
 
 
-def get_tag(expr: sd.Expression) -> Tag:
-    if isinstance(expr, sd.Variable):
+def get_tag(expr: alg.Expression) -> Tag:
+    if isinstance(expr, alg.Variable):
         return VariableTag(expr.name)
-    if isinstance(expr, sd.Constant):
+    if isinstance(expr, alg.Constant):
         return ConstantTag(expr.val)
 
     source = expr.node.source
     if source is None:
         return None
 
-    if isinstance(source, sd.UnarySymFunc):
+    if isinstance(source, alg.UnarySymFunc):
         return UnaryFuncTag(source)
-    if isinstance(source, sd.BinarySymFunc):
+    if isinstance(source, alg.BinarySymFunc):
         return BinaryFuncTag(source)
 
     return None
 
 
-def update_pattern_ctx(expr: sd.Expression, pattern: Tag, ctx: sdt.RuleContext) -> bool:
+def update_pattern_ctx(
+    expr: alg.Expression, pattern: Tag, ctx: algt.RuleContext
+) -> bool:
     expr_tag = get_tag(expr)
     if expr_tag is None:
         return False
@@ -405,7 +418,7 @@ def update_pattern_ctx(expr: sd.Expression, pattern: Tag, ctx: sdt.RuleContext) 
     return True
 
 
-def post_order_apply(expr: sd.Expression, ruleset: tuple[sdt.Rule]) -> sd.Expression:
+def post_order_apply(expr: alg.Expression, ruleset: tuple[algt.Rule]) -> alg.Expression:
     expr.node.args = [post_order_apply(arg, ruleset) for arg in expr.node.args]
     for pattern, applier in ruleset:
         ctx = {}
@@ -421,7 +434,7 @@ def post_order_apply(expr: sd.Expression, ruleset: tuple[sdt.Rule]) -> sd.Expres
     return expr
 
 
-def pre_order_apply(expr: sd.Expression, ruleset: tuple[sdt.Rule]) -> sd.Expression:
+def pre_order_apply(expr: alg.Expression, ruleset: tuple[algt.Rule]) -> alg.Expression:
     for pattern, applier in ruleset:
         ctx = {}
         matched = update_pattern_ctx(expr, pattern, ctx)
@@ -436,7 +449,7 @@ def pre_order_apply(expr: sd.Expression, ruleset: tuple[sdt.Rule]) -> sd.Express
     return expr
 
 
-def simplify(expr: sd.Expression) -> sd.Expression:
+def simplify(expr: alg.Expression) -> alg.Expression:
     with no_engine():
         expr = pre_order_apply(expr, EARLY_DISPATCH_RULES)
         expr = post_order_apply(expr, REGULAR_DISPATCH_RULES)

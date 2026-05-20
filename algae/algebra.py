@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any, Callable, List, Optional, Set
 
-    import algae.types as sdt
+    import algae.types as algt
 
-import algae as sd
+import algae as alg
 from algae.utils import remove_redudant_parens
 
 
@@ -123,34 +123,34 @@ class Expression(AlgebraObj):
         return -1 * self
 
     def __add__(self, other: Expression | Any) -> Expression:
-        return sd.add(self, other)
+        return alg.add(self, other)
 
     def __radd__(self, other: Expression | Any) -> Expression:
-        return sd.add(other, self)
+        return alg.add(other, self)
 
     def __sub__(self, other: Expression | Any) -> Expression:
-        return sd.subtract(self, other)
+        return alg.subtract(self, other)
 
     def __rsub__(self, other: Expression | Any) -> Expression:
-        return sd.subtract(other, self)
+        return alg.subtract(other, self)
 
     def __mul__(self, other: Expression | Any) -> Expression:
-        return sd.multiply(self, other)
+        return alg.multiply(self, other)
 
     def __rmul__(self, other: Expression | Any) -> Expression:
-        return sd.multiply(other, self)
+        return alg.multiply(other, self)
 
     def __truediv__(self, other: Expression | Any) -> Expression:
-        return sd.divide(self, other)
+        return alg.divide(self, other)
 
     def __rtruediv__(self, other: Expression | Any) -> Expression:
-        return sd.divide(other, self)
+        return alg.divide(other, self)
 
     def __pow__(self, other: Expression | Any) -> Expression:
-        return sd.pow(self, other)
+        return alg.pow(self, other)
 
     def __rpow__(self, other: Expression | Any) -> Expression:
-        return sd.pow(other, self)
+        return alg.pow(other, self)
 
     def eval(self, *vars: FrozenVariable) -> Any:
         return self.node.eval(*vars)
@@ -280,7 +280,7 @@ class UnarySymFunc(SymFunc):
     def __init__(
         self,
         eval_func: Callable[[Any], Any],
-        diff_x: sdt.UnaryFunction,
+        diff_x: algt.UnaryFunction,
         repr_func: Callable[[Expression], str],
         func_name: str,
     ):
@@ -305,8 +305,8 @@ class BinarySymFunc(SymFunc):
     def __init__(
         self,
         eval_func: Callable[[Any, Any], Any],
-        diff_x: sdt.BinaryFunction,
-        diff_y: sdt.BinaryFunction,
+        diff_x: algt.BinaryFunction,
+        diff_y: algt.BinaryFunction,
         repr_func: Callable[[Expression, Expression], str],
         func_name: str,
         associates: bool = False,
