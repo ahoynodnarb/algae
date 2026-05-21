@@ -488,6 +488,7 @@ normalization_rules = (
 EARLY_DISPATCH_RULES = (
     *folding_rules,
     *identity_rules,
+    *combining_rules,
 )
 REGULAR_DISPATCH_RULES = (
     *folding_rules,
