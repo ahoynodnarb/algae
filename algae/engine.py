@@ -51,6 +51,8 @@ class Tag:
 
 # matches with any expression subclassing generic
 class GenericTag(Tag):
+    generic: Tag
+
     def __init__(self, generic: Tag, identifier: Any):
         super().__init__(identifier=identifier)
         self.generic = generic
@@ -72,15 +74,30 @@ class ExactGenericTag(GenericTag):
         return True
 
 
+class GenericAntiTag(GenericTag):
+    def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
+        if isinstance(other, self.generic):
+            return False
+        if self.identifier in ctx and ctx[self.identifier][0] != other:
+            return False
+        return True
+
+
+class ExactGenericAntiTag(GenericTag):
+    def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
+        if isinstance(other, self.generic):
+            return False
+        if self.identifier in ctx and ctx[self.identifier][1] != other:
+            return False
+        return True
+
+
 class ConstantTag(Tag):
     identifier: alg.Constant
 
 
-class VariableTag(GenericTag):
+class VariableTag(Tag):
     identifier: alg.Variable
-
-    def __init__(self, identifier):
-        super().__init__(type(self), identifier)
 
 
 class FuncTag(Tag):
@@ -96,7 +113,9 @@ class FuncTag(Tag):
 
 
 class GenericFuncTag(GenericTag, FuncTag):
-    def __init__(self, generic, identifier):
+    generic: alg.SymFunc
+
+    def __init__(self, generic: alg.SymFunc, identifier: Any):
         super().__init__(generic, identifier)
 
     def __call__(self, *args: List[Tag]) -> Tag:
@@ -120,7 +139,7 @@ class BinaryFuncTag(FuncTag):
 
 
 class CommutativeTag(GenericTag, BinaryFuncTag):
-    def __init__(self, identifier):
+    def __init__(self, identifier: alg.BinarySymFunc):
         super().__init__(BinaryFuncTag, identifier)
 
     def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
@@ -133,7 +152,7 @@ class CommutativeTag(GenericTag, BinaryFuncTag):
 
 
 class AssociativeTag(GenericTag, BinaryFuncTag):
-    def __init__(self, identifier):
+    def __init__(self, identifier: alg.BinarySymFunc):
         super().__init__(BinaryFuncTag, identifier)
 
     def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
@@ -146,7 +165,7 @@ class AssociativeTag(GenericTag, BinaryFuncTag):
 
 
 class PositiveConstantTag(GenericTag):
-    def __init__(self, identifier):
+    def __init__(self, identifier: Any):
         super().__init__(ConstantTag, identifier)
 
     def matches(self, other, ctx):
@@ -154,7 +173,7 @@ class PositiveConstantTag(GenericTag):
 
 
 class NegativeConstantTag(GenericTag):
-    def __init__(self, identifier):
+    def __init__(self, identifier: Any):
         super().__init__(ConstantTag, identifier)
 
     def matches(self, other, ctx):
@@ -221,21 +240,28 @@ def transpose_mul(ctx: algt.RuleContext) -> alg.Expression:
 
 
 def combine_no_coeff(ctx: algt.RuleContext) -> alg.Expression:
-    _, e = ctx["e"]
-    return 2 * e
+    _, x = ctx["e"]
+    return 2 * x
 
 
 def combine_one_coeff(ctx: algt.RuleContext) -> alg.Expression:
     _, a = ctx["a"]
-    _, e = ctx["e"]
-    return (a + 1) * e
+    _, x = ctx["e"]
+    return (a + 1) * x
 
 
 def combine_two_coeff(ctx: algt.RuleContext) -> alg.Expression:
     _, a = ctx["a"]
     _, b = ctx["b"]
-    _, e = ctx["e"]
-    return (a + b) * e
+    _, x = ctx["x"]
+    return (a + b) * x
+
+
+def distribute(ctx: algt.RuleContext) -> alg.Expression:
+    _, e1 = ctx["e1"]
+    _, e2 = ctx["e1"]
+    _, e3 = ctx["e3"]
+    return (e1 + e3) * e2
 
 
 def format_sub(ctx: algt.RuleContext) -> alg.Expression:
@@ -284,51 +310,52 @@ folding_rules = (
 combining_rules = (
     (
         AddTag(
-            ExactGenericTag(Tag, "e"),
-            ExactGenericTag(Tag, "e"),
+            GenericTag(VariableTag, "x"),
+            GenericTag(VariableTag, "x"),
         ),
         combine_no_coeff,
     ),
     (
         AddTag(
-            MulTag(GenericTag(ConstantTag, "a"), ExactGenericTag(Tag, "e")),
-            ExactGenericTag(Tag, "e"),
+            MulTag(GenericTag(ConstantTag, "a"), GenericTag(VariableTag, "x")),
+            GenericTag(VariableTag, "x"),
         ),
         combine_one_coeff,
     ),
     (
         AddTag(
-            MulTag(GenericTag(ConstantTag, "a"), ExactGenericTag(Tag, "e")),
-            MulTag(GenericTag(ConstantTag, "b"), ExactGenericTag(Tag, "e")),
+            MulTag(GenericTag(ConstantTag, "a"), GenericTag(VariableTag, "x")),
+            MulTag(GenericTag(ConstantTag, "b"), GenericTag(VariableTag, "x")),
         ),
         combine_two_coeff,
+    ),
+)
+distributing_rules = (
+    (
+        AddTag(
+            MulTag(
+                GenericTag(Tag, "e1"),
+                ExactGenericTag(Tag, "e2"),
+            ),
+            MulTag(
+                GenericTag(Tag, "e3"),
+                ExactGenericTag(Tag, "e2"),
+            ),
+        ),
+        distribute,
     ),
 )
 formatting_rules = (
     (
         AddTag(
             GenericTag(ConstantTag, "a"),
-            VariableTag("e"),
-        ),
-        transpose_add,
-    ),
-    (
-        AddTag(
-            GenericTag(ConstantTag, "a"),
-            GenericTag(FuncTag, "e"),
+            GenericAntiTag(ConstantTag, "e"),
         ),
         transpose_add,
     ),
     (
         MulTag(
-            GenericTag(VariableTag, "e"),
-            GenericTag(ConstantTag, "a"),
-        ),
-        transpose_mul,
-    ),
-    (
-        MulTag(
-            GenericTag(FuncTag, "e"),
+            GenericAntiTag(ConstantTag, "e"),
             GenericTag(ConstantTag, "a"),
         ),
         transpose_mul,
@@ -358,17 +385,7 @@ grouping_rules = (
         AssociativeTag("f")(
             GenericTag(ConstantTag, "a"),
             AssociativeTag("f")(
-                GenericTag(FuncTag, "b"),
-                GenericTag(ConstantTag, "c"),
-            ),
-        ),
-        group_associative,
-    ),
-    (
-        AssociativeTag("f")(
-            GenericTag(ConstantTag, "a"),
-            AssociativeTag("f")(
-                VariableTag("b"),
+                GenericAntiTag(ConstantTag, "b"),
                 GenericTag(ConstantTag, "c"),
             ),
         ),
@@ -429,27 +446,11 @@ identity_rules = (
         expr_short_circuit,
     ),
     (
-        ExpTag(LogTag(PositiveConstantTag("e"))),
+        ExpTag(LogTag(GenericAntiTag(NegativeConstantTag, "e"))),
         expr_short_circuit,
     ),
     (
-        ExpTag(LogTag(GenericTag(FuncTag, "e"))),
-        expr_short_circuit,
-    ),
-    (
-        ExpTag(LogTag(GenericTag(VariableTag, "e"))),
-        expr_short_circuit,
-    ),
-    (
-        LogTag(ExpTag(PositiveConstantTag("e"))),
-        expr_short_circuit,
-    ),
-    (
-        LogTag(ExpTag(GenericTag(FuncTag, "e"))),
-        expr_short_circuit,
-    ),
-    (
-        LogTag(ExpTag(GenericTag(VariableTag, "e"))),
+        LogTag(ExpTag(GenericAntiTag(NegativeConstantTag, "e"))),
         expr_short_circuit,
     ),
 )
@@ -479,14 +480,15 @@ EARLY_DISPATCH_RULES = (
 )
 REGULAR_DISPATCH_RULES = (
     *folding_rules,
+    *identity_rules,
     *grouping_rules,
     *formatting_rules,
     *combining_rules,
 )
 FINAL_DISPATCH_RULES = (
     *folding_rules,
-    *normalization_rules,
     *identity_rules,
+    *normalization_rules,
 )
 
 
