@@ -1,4 +1,8 @@
-def remove_redudant_parens(s: str) -> str:
+# since each function's repr_func calls the __repr__ function of its arguments,
+# format_expr will be called post-order on every internal argument's string
+
+
+def format_expr(s: str) -> str:
     if len(s) <= 2:
         return s
     start = s.find("(")

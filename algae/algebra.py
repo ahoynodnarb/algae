@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     import algae.types as algt
 
 import algae as alg
-from algae.utils import remove_redudant_parens
+from algae.utils import format_expr
 
 
 class ExpressionNode:
@@ -64,7 +64,7 @@ class ExpressionNode:
         if self.repr_func is None:
             return super().__repr__()
 
-        return remove_redudant_parens(self.repr_func(*self.args))
+        return format_expr(self.repr_func(*self.args))
 
 
 class ConstantNode(ExpressionNode):

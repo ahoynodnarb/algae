@@ -156,13 +156,32 @@ AddTag = BinaryFuncTag(F.add)
 SubTag = BinaryFuncTag(F.subtract)
 MulTag = BinaryFuncTag(F.multiply)
 DivTag = BinaryFuncTag(F.divide)
+PowTag = BinaryFuncTag(F.pow)
+SqrtTag = UnaryFuncTag(F.sqrt)
+LogTag = UnaryFuncTag(F.log)
+ExpTag = UnaryFuncTag(F.exp)
+SinTag = UnaryFuncTag(F.sin)
+CosTag = UnaryFuncTag(F.cos)
+TanTag = UnaryFuncTag(F.tan)
+CscTag = UnaryFuncTag(F.csc)
+SecTag = UnaryFuncTag(F.sec)
+CotTag = UnaryFuncTag(F.cot)
+AsinTag = UnaryFuncTag(F.asin)
+AcosTag = UnaryFuncTag(F.acos)
+AtanTag = UnaryFuncTag(F.atan)
 
 
-def fold_constants(ctx: algt.RuleContext) -> alg.Constant:
+def fold_constants_binary(ctx: algt.RuleContext) -> alg.Constant:
     _, f = ctx["f"]
     _, a = ctx["a"]
     _, b = ctx["b"]
     return alg.Constant(f(a, b).eval())
+
+
+def fold_constants_unary(ctx: algt.RuleContext) -> alg.Constant:
+    _, f = ctx["f"]
+    _, a = ctx["a"]
+    return alg.Constant(f(a).eval())
 
 
 def group_commutative(ctx: algt.RuleContext) -> alg.Expression:
@@ -203,13 +222,47 @@ def combine_mul(ctx: algt.RuleContext) -> alg.Expression:
     return (a + 1) * x
 
 
+def format_sub(ctx: algt.RuleContext) -> alg.Expression:
+    _, a = ctx["a"]
+    _, b = ctx["b"]
+    return a + (-b)
+
+
+def reformat_sub(ctx: algt.RuleContext) -> alg.Expression:
+    _, e = ctx["e"]
+    _, a = ctx["a"]
+    return e - (-a)
+
+
+def reformat_mul(ctx: algt.RuleContext) -> alg.Expression:
+    _, a = ctx["a"]
+    _, b = ctx["b"]
+    _, c = ctx["c"]
+    return a - (-b * c)
+
+
+def expr_short_circuit(ctx: algt.RuleContext) -> alg.Expression:
+    _, e = ctx["e"]
+    return e
+
+
+def zero_short_circuit(ctx: algt.RuleContext) -> alg.Expression:
+    return alg.Constant(0)
+
+
 folding_rules = (
+    (
+        GenericFuncTag(UnaryFuncTag, "f")(
+            GenericTag(ConstantTag, "a"),
+        ),
+        fold_constants_unary,
+    ),
     (
         GenericFuncTag(BinaryFuncTag, "f")(
             GenericTag(ConstantTag, "a"),
             GenericTag(ConstantTag, "b"),
         ),
-        fold_constants,
+        fold_constants_binary,
     ),
 )
 combining_rules = (
@@ -265,9 +318,11 @@ formatting_rules = (
             GenericTag(Tag, "a"),
             GenericTag(Tag, "b"),
         ),
-        lambda ctx: ctx["a"][1] + (-ctx["b"][1]),
+        format_sub,
     ),
 )
+
+
 grouping_rules = (
     (
         AssociativeTag("f")(
@@ -306,42 +361,85 @@ identity_rules = (
             ConstantTag(0),
             GenericTag(Tag, "e"),
         ),
-        lambda ctx: alg.Constant(0),
+        zero_short_circuit,
     ),
     (
         MulTag(
             GenericTag(Tag, "e"),
             ConstantTag(0),
         ),
-        lambda ctx: alg.Constant(0),
+        zero_short_circuit,
     ),
     (
         MulTag(
             ConstantTag(1),
             GenericTag(Tag, "e"),
         ),
-        lambda ctx: ctx["e"][1],
+        expr_short_circuit,
     ),
     (
         MulTag(
             GenericTag(Tag, "e"),
             ConstantTag(1),
         ),
-        lambda ctx: ctx["e"][1],
+        expr_short_circuit,
     ),
     (
         AddTag(
             ConstantTag(0),
             GenericTag(Tag, "e"),
         ),
-        lambda ctx: ctx["e"][1],
+        expr_short_circuit,
     ),
     (
         AddTag(
             GenericTag(Tag, "e"),
             ConstantTag(0),
         ),
-        lambda ctx: ctx["e"][1],
+        expr_short_circuit,
+    ),
+    (
+        ExpTag(LogTag(PositiveConstantTag("e"))),
+        expr_short_circuit,
+    ),
+    (
+        ExpTag(LogTag(GenericFuncTag(FuncTag, "e"))),
+        expr_short_circuit,
+    ),
+    (
+        ExpTag(LogTag(GenericTag(VariableTag, "e"))),
+        expr_short_circuit,
+    ),
+    (
+        LogTag(ExpTag(PositiveConstantTag("e"))),
+        expr_short_circuit,
+    ),
+    (
+        LogTag(ExpTag(GenericFuncTag(FuncTag, "e"))),
+        expr_short_circuit,
+    ),
+    (
+        LogTag(ExpTag(GenericFuncTag(VariableTag, "e"))),
+        expr_short_circuit,
+    ),
+)
+normalization_rules = (
+    (
+        AddTag(
+            GenericTag(Tag, "e"),
+            NegativeConstantTag("a"),
+        ),
+        reformat_sub,
+    ),
+    (
+        AddTag(
+            GenericTag(Tag, "a"),
+            MulTag(
+                NegativeConstantTag("b"),
+                GenericTag(Tag, "c"),
+            ),
+        ),
+        reformat_mul,
     ),
 )
 
@@ -357,23 +455,7 @@ REGULAR_DISPATCH_RULES = (
 )
 FINAL_DISPATCH_RULES = (
     *folding_rules,
-    (
-        AddTag(
-            GenericTag(Tag, "e"),
-            NegativeConstantTag("a"),
-        ),
-        lambda ctx: ctx["e"][1] - (-ctx["a"][1]),
-    ),
-    (
-        AddTag(
-            GenericTag(Tag, "a"),
-            MulTag(
-                NegativeConstantTag("b"),
-                GenericTag(Tag, "c"),
-            ),
-        ),
-        lambda ctx: ctx["a"][1] - (-ctx["b"][1] * ctx["c"][1]),
-    ),
+    *normalization_rules,
     *identity_rules,
 )
 
