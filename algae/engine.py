@@ -515,7 +515,7 @@ formatting_rules = (
     (
         BinaryFuncAntiTag(PowTag, "f")(
             GenericTag(VariableTag, "x"),
-            ExactAntiTag(PowTag, "e"),
+            GenericTag(Tag, "e"),
         ),
         format_binary_linear_first,
     ),
