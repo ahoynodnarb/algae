@@ -60,6 +60,13 @@ class ExpressionNode:
     def is_constant(self) -> bool:
         return len(self.variables) == 0
 
+    def __eq__(self, other: Any) -> bool:
+        if type(other) is not type(self):
+            return False
+        if other.source != self.source:
+            return False
+        return self.args == other.args
+
     def __repr__(self) -> str:
         if self.repr_func is None:
             return super().__repr__()
@@ -151,6 +158,11 @@ class Expression(AlgebraObj):
 
     def __rpow__(self, other: Expression | Any) -> Expression:
         return alg.pow(other, self)
+
+    def __eq__(self, value):
+        if not isinstance(value, Expression):
+            return False
+        return self.node.__eq__(value.node)
 
     def eval(self, *vars: FrozenVariable) -> Any:
         return self.node.eval(*vars)

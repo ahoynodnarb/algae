@@ -63,6 +63,15 @@ class GenericTag(Tag):
         return True
 
 
+class ExactGenericTag(GenericTag):
+    def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
+        if not isinstance(other, self.generic):
+            return False
+        if self.identifier in ctx and ctx[self.identifier][1] != other:
+            return False
+        return True
+
+
 class ConstantTag(Tag):
     identifier: alg.Constant
 
@@ -211,15 +220,22 @@ def transpose_mul(ctx: algt.RuleContext) -> alg.Expression:
     return a * e
 
 
-def combine_add(ctx: algt.RuleContext) -> alg.Expression:
-    _, x = ctx["x"]
-    return 2 * x
+def combine_no_coeff(ctx: algt.RuleContext) -> alg.Expression:
+    _, e = ctx["e"]
+    return 2 * e
 
 
-def combine_mul(ctx: algt.RuleContext) -> alg.Expression:
+def combine_one_coeff(ctx: algt.RuleContext) -> alg.Expression:
     _, a = ctx["a"]
-    _, x = ctx["x"]
-    return (a + 1) * x
+    _, e = ctx["e"]
+    return (a + 1) * e
+
+
+def combine_two_coeff(ctx: algt.RuleContext) -> alg.Expression:
+    _, a = ctx["a"]
+    _, b = ctx["b"]
+    _, e = ctx["e"]
+    return (a + b) * e
 
 
 def format_sub(ctx: algt.RuleContext) -> alg.Expression:
@@ -268,17 +284,24 @@ folding_rules = (
 combining_rules = (
     (
         AddTag(
-            VariableTag("x"),
-            VariableTag("x"),
+            ExactGenericTag(Tag, "e"),
+            ExactGenericTag(Tag, "e"),
         ),
-        combine_add,
+        combine_no_coeff,
     ),
     (
         AddTag(
-            MulTag(GenericTag(ConstantTag, "a"), VariableTag("x")),
-            VariableTag("x"),
+            MulTag(GenericTag(ConstantTag, "a"), ExactGenericTag(Tag, "e")),
+            ExactGenericTag(Tag, "e"),
         ),
-        combine_mul,
+        combine_one_coeff,
+    ),
+    (
+        AddTag(
+            MulTag(GenericTag(ConstantTag, "a"), ExactGenericTag(Tag, "e")),
+            MulTag(GenericTag(ConstantTag, "b"), ExactGenericTag(Tag, "e")),
+        ),
+        combine_two_coeff,
     ),
 )
 formatting_rules = (
@@ -298,7 +321,14 @@ formatting_rules = (
     ),
     (
         MulTag(
-            GenericTag(Tag, "e"),
+            GenericTag(VariableTag, "e"),
+            GenericTag(ConstantTag, "a"),
+        ),
+        transpose_mul,
+    ),
+    (
+        MulTag(
+            GenericTag(FuncTag, "e"),
             GenericTag(ConstantTag, "a"),
         ),
         transpose_mul,
@@ -403,7 +433,7 @@ identity_rules = (
         expr_short_circuit,
     ),
     (
-        ExpTag(LogTag(GenericFuncTag(FuncTag, "e"))),
+        ExpTag(LogTag(GenericTag(FuncTag, "e"))),
         expr_short_circuit,
     ),
     (
@@ -415,11 +445,11 @@ identity_rules = (
         expr_short_circuit,
     ),
     (
-        LogTag(ExpTag(GenericFuncTag(FuncTag, "e"))),
+        LogTag(ExpTag(GenericTag(FuncTag, "e"))),
         expr_short_circuit,
     ),
     (
-        LogTag(ExpTag(GenericFuncTag(VariableTag, "e"))),
+        LogTag(ExpTag(GenericTag(VariableTag, "e"))),
         expr_short_circuit,
     ),
 )
