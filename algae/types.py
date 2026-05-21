@@ -11,6 +11,6 @@ if TYPE_CHECKING:
     UnaryFunction = Callable[[A.Expression], A.Expression]
     BinaryFunction = Callable[[A.Expression, A.Expression], A.Expression]
 
-    RuleContext = Dict[engine.Tag, Tuple[engine.Tag, A.Expression]]
+    RuleContext = Dict[engine.Tag, engine.Tag]
     Applier = Callable[[RuleContext], A.Expression]
     Rule = Tuple[engine.Tag, Applier]

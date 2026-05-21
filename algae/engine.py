@@ -31,10 +31,12 @@ class no_engine:
 class Tag:
     identifier: Any
     args: List[Tag]
+    expr: alg.Expression
 
     def __init__(self, identifier: Any):
         self.identifier = identifier
         self.args = []
+        self.expr = None
 
     def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
         if isinstance(other, GenericTag):
@@ -60,34 +62,37 @@ class GenericTag(Tag):
     def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
         if not isinstance(other, self.generic):
             return False
-        if self.identifier in ctx and ctx[self.identifier][0] != other:
+        if self.identifier in ctx and ctx[self.identifier] != other:
             return False
         return True
 
 
-class ExactGenericTag(GenericTag):
-    def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
-        if not isinstance(other, self.generic):
-            return False
-        if self.identifier in ctx and ctx[self.identifier][1] != other:
-            return False
-        return True
-
-
+# matches exactly if a tag does not subclass a generic tag
 class GenericAntiTag(GenericTag):
     def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
         if isinstance(other, self.generic):
             return False
-        if self.identifier in ctx and ctx[self.identifier][0] != other:
+        if self.identifier in ctx and ctx[self.identifier] != other:
             return False
         return True
 
 
-class ExactGenericAntiTag(GenericTag):
+# matches exactly if two expressions are exactly the same
+class ExactTag(GenericTag):
     def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
-        if isinstance(other, self.generic):
+        if not isinstance(other, self.generic):
             return False
-        if self.identifier in ctx and ctx[self.identifier][1] != other:
+        if self.identifier in ctx and ctx[self.identifier].expr != other.expr:
+            return False
+        return True
+
+
+# matches exactly if two expressions are different
+class ExactAntiTag(GenericTag):
+    def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
+        if self.generic.expr == other.expr:
+            return False
+        if self.identifier in ctx and ctx[self.identifier].expr != other.expr:
             return False
         return True
 
@@ -200,91 +205,91 @@ AtanTag = UnaryFuncTag(F.atan)
 
 
 def fold_constants_binary(ctx: algt.RuleContext) -> alg.Constant:
-    _, f = ctx["f"]
-    _, a = ctx["a"]
-    _, b = ctx["b"]
+    f = ctx["f"].expr
+    a = ctx["a"].expr
+    b = ctx["b"].expr
     return alg.Constant(f(a, b).eval())
 
 
 def fold_constants_unary(ctx: algt.RuleContext) -> alg.Constant:
-    _, f = ctx["f"]
-    _, a = ctx["a"]
+    f = ctx["f"].expr
+    a = ctx["a"].expr
     return alg.Constant(f(a).eval())
 
 
 def group_commutative(ctx: algt.RuleContext) -> alg.Expression:
-    _, f = ctx["f"]
-    _, e = ctx["e"]
-    _, a = ctx["a"]
+    f = ctx["f"].expr
+    e = ctx["e"].expr
+    a = ctx["a"].expr
     return f(e, a)
 
 
 def group_associative(ctx: algt.RuleContext) -> alg.Expression:
-    _, f = ctx["f"]
-    _, a = ctx["a"]
-    _, b = ctx["b"]
-    _, c = ctx["c"]
+    f = ctx["f"].expr
+    a = ctx["a"].expr
+    b = ctx["b"].expr
+    c = ctx["c"].expr
     return f(b, f(a, c))
 
 
 def transpose_add(ctx: algt.RuleContext) -> alg.Expression:
-    _, a = ctx["a"]
-    _, e = ctx["e"]
+    a = ctx["a"].expr
+    e = ctx["e"].expr
     return e + a
 
 
 def transpose_mul(ctx: algt.RuleContext) -> alg.Expression:
-    _, a = ctx["a"]
-    _, e = ctx["e"]
+    a = ctx["a"].expr
+    e = ctx["e"].expr
     return a * e
 
 
 def combine_no_coeff(ctx: algt.RuleContext) -> alg.Expression:
-    _, x = ctx["e"]
-    return 2 * x
+    e = ctx["e"].expr
+    return 2 * e
 
 
 def combine_one_coeff(ctx: algt.RuleContext) -> alg.Expression:
-    _, a = ctx["a"]
-    _, x = ctx["e"]
-    return (a + 1) * x
+    a = ctx["a"].expr
+    e = ctx["e"].expr
+    return (a + 1) * e
 
 
 def combine_two_coeff(ctx: algt.RuleContext) -> alg.Expression:
-    _, a = ctx["a"]
-    _, b = ctx["b"]
-    _, x = ctx["x"]
-    return (a + b) * x
+    a = ctx["a"].expr
+    b = ctx["b"].expr
+    e = ctx["e"].expr
+    return (a + b) * e
 
 
 def distribute(ctx: algt.RuleContext) -> alg.Expression:
-    _, e1 = ctx["e1"]
-    _, e2 = ctx["e2"]
-    _, e3 = ctx["e3"]
+    e1 = ctx["e1"].expr
+    e2 = ctx["e2"].expr
+    e3 = ctx["e3"].expr
     return e1 * e2 + e1 * e3
 
 
 def format_sub(ctx: algt.RuleContext) -> alg.Expression:
-    _, a = ctx["a"]
-    _, b = ctx["b"]
+    a = ctx["a"].expr
+    b = ctx["b"].expr
     return a + (-b)
 
 
 def reformat_sub(ctx: algt.RuleContext) -> alg.Expression:
-    _, e = ctx["e"]
-    _, a = ctx["a"]
+    e = ctx["e"].expr
+    a = ctx["a"].expr
     return e - (-a)
 
 
 def reformat_mul(ctx: algt.RuleContext) -> alg.Expression:
-    _, a = ctx["a"]
-    _, b = ctx["b"]
-    _, c = ctx["c"]
+    a = ctx["a"].expr
+    b = ctx["b"].expr
+    c = ctx["c"].expr
     return a - (-b * c)
 
 
 def expr_short_circuit(ctx: algt.RuleContext) -> alg.Expression:
-    _, e = ctx["e"]
+    e = ctx["e"].expr
     return e
 
 
@@ -310,8 +315,8 @@ folding_rules = (
 combining_rules = (
     (
         AddTag(
-            GenericTag(VariableTag, "x"),
-            GenericTag(VariableTag, "x"),
+            ExactAntiTag(AddTag, "e"),
+            ExactAntiTag(AddTag, "e"),
         ),
         combine_no_coeff,
     ),
@@ -319,9 +324,9 @@ combining_rules = (
         AddTag(
             MulTag(
                 GenericTag(ConstantTag, "a"),
-                GenericTag(VariableTag, "x"),
+                ExactAntiTag(AddTag, "e"),
             ),
-            GenericTag(VariableTag, "x"),
+            ExactAntiTag(AddTag, "e"),
         ),
         combine_one_coeff,
     ),
@@ -329,11 +334,11 @@ combining_rules = (
         AddTag(
             MulTag(
                 GenericTag(ConstantTag, "a"),
-                GenericTag(VariableTag, "x"),
+                ExactAntiTag(AddTag, "e"),
             ),
             MulTag(
                 GenericTag(ConstantTag, "b"),
-                GenericTag(VariableTag, "x"),
+                ExactAntiTag(AddTag, "e"),
             ),
         ),
         combine_two_coeff,
@@ -521,16 +526,19 @@ def update_pattern_ctx(
     expr: alg.Expression, pattern: Tag, ctx: algt.RuleContext
 ) -> bool:
     expr_tag = get_tag(expr)
+
     if expr_tag is None:
         return False
+
+    if isinstance(pattern, FuncTag):
+        expr_tag.expr = expr.node.source
+    else:
+        expr_tag.expr = expr
 
     if not pattern.matches(expr_tag, ctx):
         return False
 
-    if isinstance(pattern, FuncTag):
-        ctx[pattern.identifier] = (expr_tag, expr.node.source)
-    else:
-        ctx[pattern.identifier] = (expr_tag, expr)
+    ctx[pattern.identifier] = expr_tag
 
     for subexpr, subpattern in zip(expr.node.args, pattern.args):
         if not update_pattern_ctx(subexpr, subpattern, ctx=ctx):
