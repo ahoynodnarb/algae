@@ -259,9 +259,9 @@ def combine_two_coeff(ctx: algt.RuleContext) -> alg.Expression:
 
 def distribute(ctx: algt.RuleContext) -> alg.Expression:
     _, e1 = ctx["e1"]
-    _, e2 = ctx["e1"]
+    _, e2 = ctx["e2"]
     _, e3 = ctx["e3"]
-    return (e1 + e3) * e2
+    return e1 * e2 + e1 * e3
 
 
 def format_sub(ctx: algt.RuleContext) -> alg.Expression:
@@ -317,29 +317,35 @@ combining_rules = (
     ),
     (
         AddTag(
-            MulTag(GenericTag(ConstantTag, "a"), GenericTag(VariableTag, "x")),
+            MulTag(
+                GenericTag(ConstantTag, "a"),
+                GenericTag(VariableTag, "x"),
+            ),
             GenericTag(VariableTag, "x"),
         ),
         combine_one_coeff,
     ),
     (
         AddTag(
-            MulTag(GenericTag(ConstantTag, "a"), GenericTag(VariableTag, "x")),
-            MulTag(GenericTag(ConstantTag, "b"), GenericTag(VariableTag, "x")),
+            MulTag(
+                GenericTag(ConstantTag, "a"),
+                GenericTag(VariableTag, "x"),
+            ),
+            MulTag(
+                GenericTag(ConstantTag, "b"),
+                GenericTag(VariableTag, "x"),
+            ),
         ),
         combine_two_coeff,
     ),
 )
 distributing_rules = (
     (
-        AddTag(
-            MulTag(
-                GenericTag(Tag, "e1"),
-                ExactGenericTag(Tag, "e2"),
-            ),
-            MulTag(
+        MulTag(
+            GenericTag(Tag, "e1"),
+            AddTag(
+                GenericAntiTag(ConstantTag, "e2"),
                 GenericTag(Tag, "e3"),
-                ExactGenericTag(Tag, "e2"),
             ),
         ),
         distribute,
@@ -484,6 +490,7 @@ REGULAR_DISPATCH_RULES = (
     *grouping_rules,
     *formatting_rules,
     *combining_rules,
+    *distributing_rules,
 )
 FINAL_DISPATCH_RULES = (
     *folding_rules,
