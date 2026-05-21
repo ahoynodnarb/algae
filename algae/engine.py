@@ -77,10 +77,22 @@ class GenericAntiTag(GenericTag):
         return True
 
 
-# matches exactly if two expressions are exactly the same
-class ExactTag(GenericTag):
+# matches exactly if two expressions of any subclass of the generic type are exactly the same
+class ExactGenericTag(GenericTag):
     def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
         if not isinstance(other, self.generic):
+            return False
+        if self.identifier in ctx and ctx[self.identifier].expr != other.expr:
+            return False
+        return True
+
+
+# matches exactly if two expressions of have the same type and are exactly the same
+class ExactTag(GenericTag):
+    generic: type
+
+    def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
+        if type(other) != self.generic:
             return False
         if self.identifier in ctx and ctx[self.identifier].expr != other.expr:
             return False
@@ -90,8 +102,6 @@ class ExactTag(GenericTag):
 # matches exactly if two expressions are different
 class ExactAntiTag(GenericTag):
     def matches(self, other: Tag, ctx: dict[Tag, Tag]) -> bool:
-        if self.generic.expr == other.expr:
-            return False
         if self.identifier in ctx and ctx[self.identifier].expr != other.expr:
             return False
         return True
