@@ -7,7 +7,7 @@ import algae.algebra as alg
 import algae.functions as F
 
 if TYPE_CHECKING:
-    from typing import Any, List
+    from typing import Any, List, Sequence
 
     import algae.types as algt
 
@@ -229,6 +229,39 @@ class NegativeConstantTag(GenericTag):
         return super().matches(other, ctx) and other.identifier < 0
 
 
+class LogicalTag(Tag):
+    def __init__(self, *tags: Tag):
+        sentinel = tags[0].identifier
+        assert all([tag.identifier == sentinel for tag in tags])
+        super().__init__(sentinel)
+        self.tags = tags
+
+
+class AndTag(LogicalTag):
+    def matches(self, other: Tag, ctx: algt.RuleContext):
+        return all([tag.matches(other, ctx) for tag in self.tags])
+
+
+class NandTag(LogicalTag):
+    def matches(self, other: Tag, ctx: algt.RuleContext):
+        return not all([tag.matches(other, ctx) for tag in self.tags])
+
+
+class OrTag(LogicalTag):
+    def matches(self, other: Tag, ctx: algt.RuleContext):
+        return any([tag.matches(other, ctx) for tag in self.tags])
+
+
+class NorTag(LogicalTag):
+    def matches(self, other: Tag, ctx: algt.RuleContext):
+        return not any([tag.matches(other, ctx) for tag in self.tags])
+
+
+class XorTag(LogicalTag):
+    def matches(self, other: Tag, ctx: algt.RuleContext):
+        return sum([tag.matches(other, ctx) for tag in self.tags]) == 1
+
+
 AddTag = BinaryFuncTag(F.add)
 SubTag = BinaryFuncTag(F.subtract)
 MulTag = BinaryFuncTag(F.multiply)
@@ -307,18 +340,18 @@ def add_like_two_coeff(ctx: algt.RuleContext) -> alg.Expression:
 
 
 def mul_var_no_coeff(ctx: algt.RuleContext) -> alg.Expression:
-    x = ctx["x"].expr
+    e = ctx["e"].expr
     a = ctx["a"].expr
     b = ctx["b"].expr
-    return x ** (a + b)
+    return e ** (a + b)
 
 
 def mul_var_one_coeff(ctx: algt.RuleContext) -> alg.Expression:
-    x = ctx["x"].expr
+    e = ctx["e"].expr
     a = ctx["a"].expr
     b = ctx["b"].expr
     c = ctx["c"].expr
-    return c * x ** (a + b)
+    return c * e ** (a + b)
 
 
 def distribute(ctx: algt.RuleContext) -> alg.Expression:
@@ -342,23 +375,23 @@ def reformat_sub(ctx: algt.RuleContext) -> alg.Expression:
 
 def format_unary_linear(ctx: algt.RuleContext) -> alg.Expression:
     f = ctx["f"].expr
-    x = ctx["x"].expr
-    return f(x**1)
+    e = ctx["e"].expr
+    return f(e**1)
 
 
 def format_binary_linear_first(ctx: algt.RuleContext) -> alg.Expression:
     f = ctx["f"].expr
-    x = ctx["x"].expr
-    e = ctx["e"].expr
-    ret = f(x**1, e)
+    e1 = ctx["e1"].expr
+    e2 = ctx["e2"].expr
+    ret = f(e1**1, e2)
     return ret
 
 
 def format_binary_linear_second(ctx: algt.RuleContext) -> alg.Expression:
     f = ctx["f"].expr
-    e = ctx["e"].expr
-    x = ctx["x"].expr
-    return f(e, x**1)
+    e2 = ctx["e2"].expr
+    e1 = ctx["e1"].expr
+    return f(e2, e1**1)
 
 
 def reformat_pow(ctx: algt.RuleContext) -> alg.Expression:
@@ -373,7 +406,7 @@ def reformat_mul(ctx: algt.RuleContext) -> alg.Expression:
     return a - (-b * c)
 
 
-def inverse_short_circuit(ctx: algt.RuleContext) -> alg.Expression:
+def expr_short_circuit(ctx: algt.RuleContext) -> alg.Expression:
     e = ctx["e"].expr
     return e
 
@@ -435,11 +468,11 @@ combining_rules = (
     (
         MulTag(
             PowTag(
-                GenericTag(VariableTag, "x"),
+                ExactAntiTag(AddTag, "e"),
                 GenericTag(ConstantTag, "a"),
             ),
             PowTag(
-                GenericTag(VariableTag, "x"),
+                ExactAntiTag(AddTag, "e"),
                 GenericTag(ConstantTag, "b"),
             ),
         ),
@@ -450,12 +483,12 @@ combining_rules = (
             MulTag(
                 GenericTag(ConstantTag, "c"),
                 PowTag(
-                    GenericTag(VariableTag, "x"),
+                    ExactAntiTag(AddTag, "e"),
                     GenericTag(ConstantTag, "a"),
                 ),
             ),
             PowTag(
-                GenericTag(VariableTag, "x"),
+                ExactAntiTag(AddTag, "e"),
                 GenericTag(ConstantTag, "b"),
             ),
         ),
@@ -508,21 +541,33 @@ formatting_rules = (
     ),
     (
         UnaryFuncAntiTag(PowTag, "f")(
-            GenericTag(VariableTag, "x"),
+            AndTag(
+                ExactAntiTag(PowTag, "e"),
+                ExactAntiTag(AddTag, "e"),
+                GenericAntiTag(ConstantTag, "e"),
+            ),
         ),
         format_unary_linear,
     ),
     (
         BinaryFuncAntiTag(PowTag, "f")(
-            GenericTag(VariableTag, "x"),
-            GenericTag(Tag, "e"),
+            AndTag(
+                ExactAntiTag(PowTag, "e1"),
+                ExactAntiTag(AddTag, "e1"),
+                GenericAntiTag(ConstantTag, "e1"),
+            ),
+            GenericTag(Tag, "e2"),
         ),
         format_binary_linear_first,
     ),
     (
         BinaryFuncAntiTag(PowTag, "f")(
-            GenericTag(Tag, "e"),
-            GenericTag(VariableTag, "x"),
+            GenericTag(Tag, "e2"),
+            AndTag(
+                ExactAntiTag(PowTag, "e1"),
+                ExactAntiTag(AddTag, "e1"),
+                GenericAntiTag(ConstantTag, "e1"),
+            ),
         ),
         format_binary_linear_second,
     ),
@@ -576,36 +621,62 @@ identity_rules = (
             ConstantTag(1),
             GenericTag(Tag, "e"),
         ),
-        inverse_short_circuit,
+        expr_short_circuit,
     ),
     (
         MulTag(
             GenericTag(Tag, "e"),
             ConstantTag(1),
         ),
-        inverse_short_circuit,
+        expr_short_circuit,
     ),
     (
         AddTag(
             ConstantTag(0),
             GenericTag(Tag, "e"),
         ),
-        inverse_short_circuit,
+        expr_short_circuit,
     ),
     (
         AddTag(
             GenericTag(Tag, "e"),
             ConstantTag(0),
         ),
-        inverse_short_circuit,
+        expr_short_circuit,
     ),
     (
         ExpTag(LogTag(GenericAntiTag(NegativeConstantTag, "e"))),
-        inverse_short_circuit,
+        expr_short_circuit,
     ),
     (
         LogTag(ExpTag(GenericAntiTag(NegativeConstantTag, "e"))),
-        inverse_short_circuit,
+        expr_short_circuit,
+    ),
+    (
+        AddTag(
+            PowTag(
+                SinTag(GenericTag(Tag, "e")),
+                ConstantTag(2),
+            ),
+            PowTag(
+                CosTag(GenericTag(Tag, "e")),
+                ConstantTag(2),
+            ),
+        ),
+        one_short_circuit,
+    ),
+    (
+        AddTag(
+            PowTag(
+                CosTag(GenericTag(Tag, "e")),
+                ConstantTag(2),
+            ),
+            PowTag(
+                SinTag(GenericTag(Tag, "e")),
+                ConstantTag(2),
+            ),
+        ),
+        one_short_circuit,
     ),
 )
 normalization_rules = (
@@ -643,9 +714,9 @@ EARLY_DISPATCH_RULES = (
 REGULAR_DISPATCH_RULES = (
     *folding_rules,
     *identity_rules,
+    *combining_rules,
     *grouping_rules,
     *formatting_rules,
-    *combining_rules,
     *distributing_rules,
 )
 FINAL_DISPATCH_RULES = (
@@ -730,11 +801,8 @@ def pre_order_apply(expr: alg.Expression, ruleset: tuple[algt.Rule]) -> alg.Expr
 
 
 def simplify(expr: alg.Expression) -> alg.Expression:
-    try:
-        with no_engine():
-            expr = pre_order_apply(expr, EARLY_DISPATCH_RULES)
-            expr = post_order_apply(expr, REGULAR_DISPATCH_RULES)
-            expr = post_order_apply(expr, FINAL_DISPATCH_RULES)
-    except RecursionError:
-        pass
+    with no_engine():
+        expr = pre_order_apply(expr, EARLY_DISPATCH_RULES)
+        expr = post_order_apply(expr, REGULAR_DISPATCH_RULES)
+        expr = post_order_apply(expr, FINAL_DISPATCH_RULES)
     return expr
